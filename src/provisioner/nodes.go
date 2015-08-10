@@ -98,30 +98,49 @@ func (node *Node) CanBeMoved() (move bool, err error) {
 
 	if len(node.Links) == 0 {
 		err = errors.New("No link data found")
+		return
 	}
 
-	only_vpn := true
+	gdb, err := NewGatewayDb("bat0")
+	if err != nil {
+		return
+	}
+
+	onlyGateways := true
 	for _, link := range node.Links {
 
-		source_name := "unknown"
+		sourceName := "unknown"
 		if link.SourceNode != nil {
-			source_name = link.SourceNode.Nodeinfo.Hostname
+			sourceName = link.SourceNode.Nodeinfo.Hostname
 		}
 
-		target_name := "unknown"
+		if link.SourceNode != node {
+			if _, ok := gdb[link.SourceMac]; ok {
+				sourceName = "GW:" + sourceName
+			} else {
+				onlyGateways = false
+			}
+		}
+
+		targetName := "unknown"
 		if link.TargetNode != nil {
-			target_name = link.TargetNode.Nodeinfo.Hostname
+			targetName = link.TargetNode.Nodeinfo.Hostname
 		}
 
-		log.Printf("%s Link: %s -> %s (VPN: %v)", node.Nodeinfo.Hostname, source_name, target_name, link.Vpn)
-		if !link.Vpn {
-			only_vpn = false
+		if link.TargetNode != node {
+			if _, ok := gdb[link.TargetMac]; ok {
+				targetName = "GW:" + targetName
+			} else {
+				onlyGateways = false
+			}
 		}
+
+		log.Printf("    Links for %s (%s): %s (%s) -> %s (%s) (VPN flag: %v)", node.Nodeinfo.Network.Mac, node.Nodeinfo.Hostname, link.SourceMac, sourceName, link.TargetMac, targetName, link.Vpn)
 	}
 
 	// ToDo: Upgrade routers that have only one mesh link ?
 
-	if !only_vpn {
+	if !onlyGateways {
 		err = errors.New("Node is meshing over wifi")
 		return
 	}
