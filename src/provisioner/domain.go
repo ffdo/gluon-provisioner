@@ -14,16 +14,18 @@ func getDomain(nodeName string) (domain string, ignore bool, err error) {
 	for domainName, domainConfig := range config.Domains {
 		ignore = domainConfig.Ignore
 
-		if domainConfig.Match != "" {
-			var domainRe *regexp.Regexp
-			domainRe, err = regexp.Compile(strings.ToLower(domainConfig.Match))
-			if err != nil {
-				return
-			}
+		for _, re := range domainConfig.Matches {
+			if re != "" {
+				var domainRe *regexp.Regexp
+				domainRe, err = regexp.Compile(strings.ToLower(re))
+				if err != nil {
+					return
+				}
 
-			if domainRe.MatchString(strings.ToLower(nodeName)) {
-				domain = domainName
-				return
+				if domainRe.MatchString(strings.ToLower(nodeName)) {
+					domain = domainName
+					return
+				}
 			}
 		}
 

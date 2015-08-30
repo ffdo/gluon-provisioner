@@ -5,8 +5,8 @@ import (
 )
 
 type Domain struct {
-	Match  string
-	Ignore bool
+	Matches []string
+	Ignore  bool
 }
 
 type Config struct {
