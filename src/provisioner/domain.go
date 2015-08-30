@@ -2,6 +2,7 @@ package main
 
 import (
 	"regexp"
+	"strings"
 )
 
 func getDomain(nodeName string) (domain string, ignore bool, err error) {
@@ -15,12 +16,12 @@ func getDomain(nodeName string) (domain string, ignore bool, err error) {
 
 		if domainConfig.Match != "" {
 			var domainRe *regexp.Regexp
-			domainRe, err = regexp.Compile(domainConfig.Match)
+			domainRe, err = regexp.Compile(strings.ToLower(domainConfig.Match))
 			if err != nil {
 				return
 			}
 
-			if domainRe.MatchString(nodeName) {
+			if domainRe.MatchString(strings.ToLower(nodeName)) {
 				domain = domainName
 				return
 			}

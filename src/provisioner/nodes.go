@@ -118,7 +118,7 @@ func (node *Node) CanBeMoved() (move bool, err error) {
 			if _, ok := gdb[link.SourceMac]; ok {
 				sourceName = "GW:" + sourceName
 			} else {
-				onlyGateways = false
+				// onlyGateways = false
 			}
 		}
 
@@ -131,8 +131,13 @@ func (node *Node) CanBeMoved() (move bool, err error) {
 			if _, ok := gdb[link.TargetMac]; ok {
 				targetName = "GW:" + targetName
 			} else {
-				onlyGateways = false
+				// onlyGateways = false
 			}
+		}
+
+		// Trust VPN flag from ffmap-backend
+		if !link.Vpn {
+			onlyGateways = false
 		}
 
 		log.Printf("    Links for %s (%s): %s (%s) -> %s (%s) (VPN flag: %v)", node.Nodeinfo.Network.Mac, node.Nodeinfo.Hostname, link.SourceMac, sourceName, link.TargetMac, targetName, link.Vpn)
