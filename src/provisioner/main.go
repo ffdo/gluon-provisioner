@@ -48,7 +48,6 @@ func main() {
 			return
 		}
 
-		// ToDo: persist / update in goroutine
 		ndb := nodeCache.Get()
 		if ndb == nil {
 			log.Println(remoteIp.String(), "Node/Graph DB is empty")
@@ -56,6 +55,7 @@ func main() {
 			return
 		}
 
+		// Look up node in alfred data
 		node, ok := ndb.ips[remoteIp.String()]
 		if !ok {
 			log.Println(remoteIp.String(), "IP not found in alfred data")
@@ -63,14 +63,16 @@ func main() {
 			return
 		}
 
-		move, err := node.CanBeMoved()
-		if err != nil || !move {
-			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Node cannot be moved:", err)
+		// Load configuration
+		config, err := NewConfig(configFile)
+		if err != nil {
+			log.Println("Error loading config file", err)
 			setPrefix(defaultDomain)
 			return
 		}
 
-		domain, ignore, err := getDomain(node.Nodeinfo.Hostname)
+		// Check if node should be moved
+		domain, force, ignore, err := config.getDomain(node)
 		if err != nil {
 			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Error looking up target domain:", err)
 			setPrefix(defaultDomain)
@@ -82,15 +84,26 @@ func main() {
 			setPrefix(defaultDomain)
 			return
 		} else {
-			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "NODE WILL BE MOVED TO:", domain)
+			log.Printf("%s %s Node should be moved to %s (force=%v, ignore=%v)",
+				remoteIp.String(), node.Nodeinfo.Hostname, domain, force, ignore)
+		}
+
+		if !force {
+			// Check if mesh links allow node to be moved safely
+			move, err := node.CanBeMoved()
+			if err != nil || !move {
+				log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Node cannot be moved:", err)
+				setPrefix(defaultDomain)
+				return
+			}
 		}
 
 		if ignore {
-			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Ignore flag is set, serving default firmware")
 			setPrefix(defaultDomain)
 		} else {
 			setPrefix(domain)
 		}
+
 	})
 
 	err := http.ListenAndServe(listenAddress, nil)
