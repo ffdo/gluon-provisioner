@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type NodeDb struct {
@@ -16,11 +17,11 @@ type NodeDb struct {
 	ips   map[string]*Node
 }
 
-func NewNodeDb(nodesPath, nodesUrl, graphPath, graphUrl string) (ndb *NodeDb, err error) {
+func NewNodeDb(nodesPath, graphPath string) (ndb *NodeDb, err error) {
 	ndb = &NodeDb{}
 
 	var nl NodeList
-	err = GetJson(nodesPath, nodesUrl, &nl)
+	err = GetJson(nodesPath, &nl)
 	if err != nil {
 		ndb = nil
 		return
@@ -28,7 +29,7 @@ func NewNodeDb(nodesPath, nodesUrl, graphPath, graphUrl string) (ndb *NodeDb, er
 	ndb.nodes = nl.Nodes
 
 	var graph Graph
-	err = GetJson(graphPath, graphUrl, &graph)
+	err = GetJson(graphPath, &graph)
 	if err != nil {
 		ndb = nil
 		return
@@ -127,17 +128,17 @@ func (ndb *NodeDb) Dump() {
 
 }
 
-func GetJson(path string, url string, result interface{}) (err error) {
-	if f, ferr := os.Open(path); ferr == nil {
-		dec := json.NewDecoder(f)
-		err = dec.Decode(result)
-		f.Close()
-	} else {
+func GetJson(path string, result interface{}) (err error) {
+	lowerPath := strings.ToLower(path)
+	if strings.HasPrefix(lowerPath, "http://") || strings.HasPrefix(lowerPath, "https://") {
+
 		var resp *http.Response
-		resp, err = http.Get(url)
+		resp, err = http.Get(path)
 		if err != nil {
 			return
 		}
+		defer resp.Body.Close()
+
 		if resp.StatusCode != 200 {
 			err = fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 			return
@@ -145,7 +146,16 @@ func GetJson(path string, url string, result interface{}) (err error) {
 
 		dec := json.NewDecoder(resp.Body)
 		err = dec.Decode(result)
-		resp.Body.Close()
+
+	} else {
+		var f *os.File
+		f, err = os.Open(path)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		dec := json.NewDecoder(f)
+		err = dec.Decode(result)
 	}
 
 	return

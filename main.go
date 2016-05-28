@@ -1,30 +1,15 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	// "os"
 )
 
 const (
-	logFlags = log.Lshortfile | log.Ldate | log.Ltime
-
-	listenAddress  = "127.0.0.1:8888"
-	defaultDomain  = "default"
-	xffHeader      = "X-Forwarded-For"
-	redirectHeader = "X-Accel-Redirect"
-	configFile     = "provisioner.toml"
-
-	// nodesUrl  = "http://map.ffdo.de/data/nodes.json"
-	// graphUrl  = "http://map.ffdo.de/data/graph.json"
-	nodesPath = "/var/www/ffmap-d3/data_source/nodes.json"
-	nodesUrl  = "http://map.freifunk-ruhrgebiet.de/data_source/nodes.json"
-	graphPath = "/var/www/ffmap-d3/data_source/graph.json"
-	graphUrl  = "http://map.freifunk-ruhrgebiet.de/data_source/graph.json"
-	// nodesUrl = "http://map.freifunk-ruhrgebiet.de/data/nodes.json"
-	// graphUrl = "http://map.freifunk-ruhrgebiet.de/data/graph.json"
+	logFlags = log.Lshortfile
 )
 
 func init() {
@@ -32,26 +17,38 @@ func init() {
 }
 
 func main() {
-	nodeCache := NewNodeCache(60, nodesPath, nodesUrl, graphPath, graphUrl)
+	var (
+		listenAddress  = flag.String("listen", "[::1]:6060", "HTTP listen address")
+		configFile     = flag.String("config", "provisioner.toml", "Path to configuration file")
+		nodesPath      = flag.String("nodes", "https://map.ffdo.de/data/nodes.json", "URL (or local path) to nodes.json")
+		graphPath      = flag.String("graph", "https://map.ffdo.de/data/graph.json", "URL (or local path) to graph.json")
+		defaultDomain  = flag.String("domain", "default", "Default domain name")
+		xffHeader      = flag.String("xff", "X-Forwarded-For", "Name of header supplying remote IP")
+		redirectHeader = flag.String("redirect", "X-Accel-Redirect", "Name of internal redirection header to set")
+	)
+
+	flag.Parse()
+
+	nodeCache := NewNodeCache(60, *nodesPath, *graphPath)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		defer req.Body.Close()
 
 		setPrefix := func(prefix string) {
-			w.Header().Add(redirectHeader, fmt.Sprintf("/%s%s", prefix, req.RequestURI))
+			w.Header().Add(*redirectHeader, fmt.Sprintf("/%s%s", prefix, req.RequestURI))
 		}
 
-		remoteIp := net.ParseIP(req.Header.Get(xffHeader))
+		remoteIp := net.ParseIP(req.Header.Get(*xffHeader))
 		if remoteIp == nil {
 			log.Println("Cannot parse IP address in", xffHeader, "header")
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		}
 
 		ndb := nodeCache.Get()
 		if ndb == nil {
 			log.Println(remoteIp.String(), "Node/Graph DB is empty")
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		}
 
@@ -59,15 +56,15 @@ func main() {
 		node, ok := ndb.ips[remoteIp.String()]
 		if !ok {
 			log.Println(remoteIp.String(), "IP not found in alfred data")
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		}
 
 		// Load configuration
-		config, err := NewConfig(configFile)
+		config, err := NewConfig(*configFile)
 		if err != nil {
 			log.Println("Error loading config file", err)
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		}
 
@@ -75,13 +72,13 @@ func main() {
 		domain, force, ignore, err := config.getDomain(node)
 		if err != nil {
 			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Error looking up target domain:", err)
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		}
 
 		if domain == "" {
 			log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Node should not be moved.")
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 			return
 		} else {
 			log.Printf("%s %s Node should be moved to %s (force=%v, ignore=%v)",
@@ -93,22 +90,22 @@ func main() {
 			move, err := node.CanBeMoved()
 			if err != nil || !move {
 				log.Println(remoteIp.String(), node.Nodeinfo.Hostname, "Node cannot be moved:", err)
-				setPrefix(defaultDomain)
+				setPrefix(*defaultDomain)
 				return
 			}
 		}
 
 		if ignore {
-			setPrefix(defaultDomain)
+			setPrefix(*defaultDomain)
 		} else {
 			setPrefix(domain)
 		}
 
 	})
 
-	err := http.ListenAndServe(listenAddress, nil)
+	err := http.ListenAndServe(*listenAddress, nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
-	log.Println("Listening on", listenAddress)
+	log.Println("Listening on", *listenAddress)
 }

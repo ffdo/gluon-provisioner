@@ -9,7 +9,7 @@ type NodeCache struct {
 	dbChan chan *NodeDb
 }
 
-func NewNodeCache(updateInterval int, nodesPath, nodesUrl, graphPath, graphUrl string) (nc *NodeCache) {
+func NewNodeCache(updateInterval int, nodesPath, graphPath string) (nc *NodeCache) {
 	nc = &NodeCache{
 		dbChan: make(chan *NodeDb),
 	}
@@ -17,7 +17,7 @@ func NewNodeCache(updateInterval int, nodesPath, nodesUrl, graphPath, graphUrl s
 	updateChan := make(chan *NodeDb)
 	go func() {
 		for {
-			ndb, err := NewNodeDb(nodesPath, nodesUrl, graphPath, graphUrl)
+			ndb, err := NewNodeDb(nodesPath, graphPath)
 			if err != nil {
 				log.Println("Error updating node cache:", err)
 			} else {
