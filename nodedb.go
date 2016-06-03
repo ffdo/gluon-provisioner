@@ -2,161 +2,93 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
-	"fmt"
+	"log"
 	"net"
-	"net/http"
-	"os"
-	"strings"
+	"sync"
+	"time"
 )
 
-type NodeDb struct {
-	nodes map[string]*Node
-	graph *Graph
-	ips   map[string]*Node
+type NodeDB struct {
+	mutex              sync.Mutex
+	nodesURL, graphURL string
+	nodes              map[string]*Node
 }
 
-func NewNodeDb(nodesPath, graphPath string) (ndb *NodeDb, err error) {
-	ndb = &NodeDb{}
+func NewNodeDB(updateInterval time.Duration, nodesURL, graphURL string) *NodeDB {
+	ndb := &NodeDB{
+		nodesURL: nodesURL,
+		graphURL: graphURL,
+	}
 
-	var nl NodeList
-	err = GetJson(nodesPath, &nl)
+	go func() {
+		for {
+			ndb.update()
+			time.Sleep(updateInterval)
+		}
+	}()
+
+	return ndb
+}
+
+func (ndb *NodeDB) update() {
+	var nodes Nodes
+	err := GetJSON(ndb.nodesURL, &nodes)
 	if err != nil {
-		ndb = nil
+		log.Println("Error fetching nodes:", err)
 		return
 	}
-	ndb.nodes = nl.Nodes
 
 	var graph Graph
-	err = GetJson(graphPath, &graph)
+	err = GetJSON(ndb.graphURL, &graph)
 	if err != nil {
-		ndb = nil
+		log.Println("Error fetching graph:", err)
 		return
 	}
-	ndb.graph = &graph
 
 	for _, link := range graph.Batadv.Links {
-		if !(link.Source < uint(len(graph.Batadv.Nodes)) && link.Target < uint(len(graph.Batadv.Nodes))) {
-			err = errors.New("Node index out of range")
+		if !(link.Source < len(graph.Batadv.Nodes) && link.Target < len(graph.Batadv.Nodes)) {
+			log.Println("Node index out of range")
 			return
 		}
-		link.SourceMac = graph.Batadv.Nodes[link.Source].Id
-		link.TargetMac = graph.Batadv.Nodes[link.Target].Id
 
-		nodeId := graph.Batadv.Nodes[link.Source].NodeId
-		if nodeId == nil {
+		nodeID := graph.Batadv.Nodes[link.Source].NodeID
+		if nodeID == "" {
 			continue
 		}
-		node, ok := ndb.nodes[*nodeId]
+		node, ok := nodes.Nodes[nodeID]
 		if ok {
 			node.Links = append(node.Links, link)
-			link.SourceNode = node
 		}
 
-		nodeId = graph.Batadv.Nodes[link.Target].NodeId
-		if nodeId == nil {
+		nodeID = graph.Batadv.Nodes[link.Target].NodeID
+		if nodeID == "" {
 			continue
 		}
-		node, ok = ndb.nodes[*nodeId]
+		node, ok = nodes.Nodes[nodeID]
 		if ok {
 			node.Links = append(node.Links, link)
-			link.TargetNode = node
 		}
 	}
 
-	ndb.ips = make(map[string]*Node)
-	for _, n := range ndb.nodes {
+	ips := make(map[string]*Node)
+	for _, n := range nodes.Nodes {
 		for _, ip := range n.Nodeinfo.Network.Addresses {
 			nip := net.ParseIP(ip)
 			// Filter link-local and ULA addresses
 			if nip != nil && !bytes.Equal(nip[0:2], []byte{0xfe, 0x80}) && !bytes.Equal(nip[0:2], []byte{0xfd, 0xa0}) {
-				ndb.ips[nip.String()] = n
+				ips[nip.String()] = n
 			}
 		}
 	}
 
+	ndb.mutex.Lock()
+	defer ndb.mutex.Unlock()
+	ndb.nodes = ips
 	return
 }
 
-func (ndb *NodeDb) Dump() {
-
-	// gdb, err := NewGatewayDb("bat0")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// for mac, _ := range gdb {
-	// 	fmt.Println(mac)
-	// }
-
-	for _, node := range ndb.ips {
-		tags := []string{}
-		if !node.Flags.Online {
-			continue
-		}
-
-		if len(node.Links) == 0 {
-			tags = append(tags, "no_linkinfo")
-		} else {
-			only_vpn := true
-			// only_gateways := true
-			for _, link := range node.Links {
-				if !link.Vpn {
-					only_vpn = false
-				}
-
-				// if !(gdb[link.SourceMac] || gdb[link.TargetMac]) {
-				// 	only_gateways = false
-				// }
-			}
-
-			if only_vpn {
-				tags = append(tags, "only_vpn")
-			}
-		}
-
-		// if only_gateways {
-		// 	tags = append(tags, "only_gateways")
-		// }
-
-		fmt.Print(node.Nodeinfo.Hostname)
-		for _, tag := range tags {
-			fmt.Print(" ", tag)
-		}
-		fmt.Println(" ", len(node.Links))
-	}
-
-}
-
-func GetJson(path string, result interface{}) (err error) {
-	lowerPath := strings.ToLower(path)
-	if strings.HasPrefix(lowerPath, "http://") || strings.HasPrefix(lowerPath, "https://") {
-
-		var resp *http.Response
-		resp, err = http.Get(path)
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			err = fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
-			return
-		}
-
-		dec := json.NewDecoder(resp.Body)
-		err = dec.Decode(result)
-
-	} else {
-		var f *os.File
-		f, err = os.Open(path)
-		if err != nil {
-			return
-		}
-		defer f.Close()
-		dec := json.NewDecoder(f)
-		err = dec.Decode(result)
-	}
-
-	return
+func (ndb *NodeDB) GetNode(ip net.IP) *Node {
+	ndb.mutex.Lock()
+	defer ndb.mutex.Unlock()
+	return ndb.nodes[ip.String()]
 }

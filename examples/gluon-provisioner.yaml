@@ -1,0 +1,52 @@
+# Neues FFDO Mesh
+2a03:2260:300a:1000::/64:
+# ::/0:
+  nodes: https://map.ffdo.de/data-neu/nodes.json
+  graph: https://map.ffdo.de/data-neu/graph.json
+  routes:
+    /ffdo/stable/:
+      default: /ffdo/releases/0.9.1/
+    /ffdo/beta/:
+      default: /ffdo/releases/0.9.1/
+    /ffdo/experimental/:
+      default: /ffdo/releases/0.9.2/
+
+# Altes FFDO Mesh
+2a03:2260:50:5::/64:
+  nodes: https://map.ffdo.de/data/nodes.json
+  graph: https://map.ffdo.de/data/graph.json
+  routes:
+    # Alte Pfade, Version 0.7.2 wird immer erst auf 0.8.2 gehoben
+    /stable/:
+      default: /ffdo/releases/0.8.2/images/
+    /beta/:
+      default: /ffdo/releases/0.8.2/images/
+    /experimental/:
+      default: /ffdo/releases/0.8.2/images/
+
+    # Aktuelle Pfade ab Version 0.8.0
+    /ffdo/stable/:
+      default: /ffdo/releases/0.8.2/
+
+    /ffdo/beta/:
+      default: /ffdo/releases/0.8.2/
+      rules:
+
+        # Dieser Node bekommt immer direkt 0.9.2
+        - when:
+            - field: hostname
+              match: FF-DO-Union01
+          path: /ffdo/releases/0.9.2/
+
+        # Alle erkannten Nodes ohne Mesh bekommen automatisch 0.9.1
+        - path: /ffdo/releases/0.9.1/
+          careful: true
+          # disabled: true
+
+    /ffdo/experimental/:
+      default: /ffdo/releases/0.8.2/
+      rules:
+        # Alle erkannten Nodes ohne Mesh bekommen automatisch 0.9.2
+        - path: /ffdo/releases/0.9.2/
+          careful: true
+          disabled: true

@@ -1,67 +1,98 @@
 package main
 
 import (
+	"bytes"
+	"io/ioutil"
+	"net"
+	"net/http"
 	"regexp"
-	"strings"
+	"sort"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v2"
 )
 
-type Domain struct {
-	Matches []string
-	Ignore  bool
-	Force   []string
-}
-
 type Config struct {
-	Domains map[string]Domain
+	networks       map[string]*Network
+	sortedNetworks []*Network
 }
 
-func NewConfig(filename string) (c *Config, err error) {
-	c = &Config{}
-	_, err = toml.DecodeFile(filename, c)
-	return
-}
+func NewConfig(filename string) (*Config, error) {
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	networks := make(map[string]*Network)
+	err = yaml.Unmarshal(content, networks)
+	if err != nil {
+		return nil, err
+	}
 
-func (c *Config) getDomain(node *Node) (domain string, force bool, ignore bool, err error) {
-	for domainName, domainConfig := range c.Domains {
-		ignore = domainConfig.Ignore
+	c := &Config{
+		networks:       networks,
+		sortedNetworks: make([]*Network, 0, len(networks)),
+	}
 
-		// Check if node should be forced
-		for _, nodespec := range domainConfig.Force {
-			if nodespec != "" {
-				nodespec = strings.ToLower(nodespec)
-				if nodespec == strings.ToLower(node.Nodeinfo.Hostname) {
-					domain = domainName
-					force = true
-					return
-				}
-				for _, ip := range node.Nodeinfo.Network.Addresses {
-					if nodespec == ip {
-						domain = domainName
-						force = true
-						return
+	for networkString, networkConfig := range networks {
+		_, networkConfig.ipnet, err = net.ParseCIDR(networkString)
+		if err != nil {
+			return nil, err
+		}
+		networkConfig.serveMux = http.NewServeMux()
+		networkConfig.nodeDB = NewNodeDB(*updateInterval, networkConfig.Nodes, networkConfig.Graph)
+
+		for path, pathConfig := range networkConfig.Routes {
+			for _, rule := range pathConfig.Rules {
+				for _, condition := range rule.When {
+					condition.re, err = regexp.Compile(condition.Match)
+					if err != nil {
+						return nil, err
 					}
 				}
 			}
+			networkConfig.serveMux.Handle(path, PathHandler(path, pathConfig, networkConfig.nodeDB))
 		}
 
-		for _, re := range domainConfig.Matches {
-			if re != "" {
-				var domainRe *regexp.Regexp
-				domainRe, err = regexp.Compile(strings.ToLower(re))
-				if err != nil {
-					return
-				}
-
-				if domainRe.MatchString(strings.ToLower(node.Nodeinfo.Hostname)) {
-					domain = domainName
-					return
-				}
-			}
-		}
-
+		c.sortedNetworks = append(c.sortedNetworks, networkConfig)
 	}
 
-	return
+	sort.Sort(ByNetmask(c.sortedNetworks))
+
+	return c, nil
+}
+
+type Network struct {
+	Nodes, Graph string
+	Routes       map[string]*PathConfig
+
+	ipnet    *net.IPNet     `yaml:"-"`
+	nodeDB   *NodeDB        `yaml:"-"`
+	serveMux *http.ServeMux `yaml:"-"`
+}
+
+type PathConfig struct {
+	Default string
+	Rules   []*Rule
+}
+
+type Rule struct {
+	When     []*Condition
+	Path     string
+	Careful  bool
+	Disabled bool
+}
+
+type ByNetmask []*Network
+
+// Sort ByNetmask largest to smallest
+func (a ByNetmask) Len() int           { return len(a) }
+func (a ByNetmask) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByNetmask) Less(i, j int) bool { return bytes.Compare(a[i].ipnet.IP, a[j].ipnet.IP) > 0 }
+
+func (c *Config) GetServeMux(ip net.IP) *http.ServeMux {
+	for _, network := range c.sortedNetworks {
+		if network.ipnet.Contains(ip) {
+			return network.serveMux
+		}
+	}
+	return nil
 }

@@ -1,9 +1,0 @@
-[domains]
-
-[domains.ffdo]
-match = "ff-do-.*"
-ignore = true
-
-[domains.ffe]
-match = "^ff-e-.*"
-ignore = true	
