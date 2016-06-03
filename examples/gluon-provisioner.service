@@ -1,0 +1,12 @@
+[Unit]
+Description=Gluon Provisioner
+After=network.target
+
+[Service]
+User=nobody
+ExecStart=/usr/local/bin/gluon-provisioner -config /etc/gluon-provisioner.yaml
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
