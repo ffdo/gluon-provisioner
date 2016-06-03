@@ -5,13 +5,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 )
 
 func PathHandler(path string, pathConfig *PathConfig, nodeDB *NodeDB) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		remoteIP := net.ParseIP(req.Header.Get(*xffHeader))
 		if remoteIP == nil {
-			msg := fmt.Sprint("Cannot parse IP address in ", *xffHeader, " header")
+			msg := fmt.Sprint("%s: Cannot parse IP address in %s header", req.URL.Path, *xffHeader)
 			log.Println(msg)
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
@@ -20,36 +21,40 @@ func PathHandler(path string, pathConfig *PathConfig, nodeDB *NodeDB) http.Handl
 		var node *Node
 	RulesLoop:
 		for _, rule := range pathConfig.Rules {
-			if len(rule.When) != 0 || rule.Careful {
+			if node == nil && (len(rule.When) != 0 || rule.Careful) {
+				node = nodeDB.GetNode(remoteIP)
 				if node == nil {
-					node = nodeDB.GetNode(remoteIP)
-				}
-				if node == nil {
-					log.Println("Node not found in node DB, cannot evaluate rule.")
+					log.Printf("%s %s: Node not found in node DB, cannot evaluate rule", remoteIP, req.URL.Path)
 					continue
 				}
+				log.Printf("%s %s: Identified node %s", remoteIP, req.URL.Path, node.Nodeinfo.Hostname)
 			}
 
 			for _, condition := range rule.When {
 				if !condition.Check(node.Nodeinfo) {
+					log.Printf("%s %s: Field '%s' does not match '%s'", remoteIP, req.URL.Path, condition.Field, condition.Match)
 					continue RulesLoop
 				}
+				log.Printf("%s %s: Field '%s' matches '%s'", remoteIP, req.URL.Path, condition.Field, condition.Match)
 			}
 
 			if rule.Careful && !node.HasOnlyVPNLinks() {
-				log.Println("Careful enabled and node is not known as VPN only, skipping rule.")
+				log.Printf("%s %s: Careful enabled and node is not VPN only, skipping rule", remoteIP, req.URL.Path)
 				continue
 			}
 
 			if rule.Disabled {
-				log.Println("Matching rule is disabled")
+				log.Printf("%s %s: Matching rule is DISABLED: %s -> %s", remoteIP, req.URL.Path, path, rule.Path)
 				continue
 			}
-			redirect(w, req.URL.Path, path, rule.Path)
+
+			log.Printf("%s %s: Using redirect rule %s -> %s", remoteIP, req.URL.Path, path, rule.Path)
+			w.Header().Set(*redirectHeader, fmt.Sprint(rule.Path, strings.TrimPrefix(req.URL.Path, path)))
 			return
 		}
 
-		redirect(w, req.URL.Path, path, pathConfig.Default)
+		log.Printf("%s %s: Using default redirect %s -> %s", remoteIP, req.URL.Path, path, pathConfig.Default)
+		w.Header().Set(*redirectHeader, fmt.Sprint(pathConfig.Default, strings.TrimPrefix(req.URL.Path, path)))
 		return
 	})
 }

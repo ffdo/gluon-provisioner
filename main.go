@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -59,9 +58,4 @@ func main() {
 		log.Fatal("ListenAndServe: ", err)
 	}
 	log.Println("Listening on", *listenAddress)
-}
-
-func redirect(w http.ResponseWriter, url, oldPrefix, newPrefix string) {
-	w.Header().Set(*redirectHeader, fmt.Sprint(newPrefix, strings.TrimPrefix(url, oldPrefix)))
-	return
 }

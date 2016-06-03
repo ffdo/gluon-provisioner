@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -43,7 +44,7 @@ func NewConfig(filename string) (*Config, error) {
 		for path, pathConfig := range networkConfig.Routes {
 			for _, rule := range pathConfig.Rules {
 				for _, condition := range rule.When {
-					condition.re, err = regexp.Compile(condition.Match)
+					condition.re, err = regexp.Compile(strings.ToLower(condition.Match))
 					if err != nil {
 						return nil, err
 					}

@@ -34,9 +34,12 @@
 
         # Dieser Node bekommt immer direkt 0.9.2
         - when:
-            - field: hostname
-              match: FF-DO-Union01
+            # Fields are given as JSON Pointer in the nodeinfo structure
+            # See https://tools.ietf.org/html/rfc6901
+            - field: /hostname
+              match: ^FF-DO-Union01$
           path: /ffdo/releases/0.9.2/
+          disabled: true
 
         # Alle erkannten Nodes ohne Mesh bekommen automatisch 0.9.1
         - path: /ffdo/releases/0.9.1/
