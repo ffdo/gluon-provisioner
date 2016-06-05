@@ -32,7 +32,6 @@ func PathHandler(path string, pathConfig *PathConfig, nodeDB *NodeDB) http.Handl
 
 			for _, condition := range rule.When {
 				if !condition.Check(node.Nodeinfo) {
-					log.Printf("%s %s: Field '%s' does not match '%s'", remoteIP, req.URL.Path, condition.Field, condition.Match)
 					continue RulesLoop
 				}
 				log.Printf("%s %s: Field '%s' matches '%s'", remoteIP, req.URL.Path, condition.Field, condition.Match)
